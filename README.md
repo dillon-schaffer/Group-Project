@@ -1,0 +1,3 @@
+# Group-Project
+
+Our project is an Event and Group Coordination API that allows users to create, join, and manage social groups and events. Users can form groups around shared interests, invite others, and organize events with details such as time, location, and capacity. The API will support RSVP functionality so users can indicate attendance and organizers can track participation. Additionally, group roles (such as organizers and members) will allow for controlled access to event management features. This system will serve as a centralized backend for coordinating activities, making it easier for users to plan and participate in events. The application will use a relational database to manage users, groups, events, and attendance data.
