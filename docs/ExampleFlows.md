@@ -137,3 +137,57 @@ Priya can see 2 confirmed attendees and 1 maybe. She plans for 3 carpools to be 
 
 ---
 
+## Flow 3: User joins a group, creates an event, is removed from the group and the event is cancelled by the group owner.
+
+Alex wants to host a sunset walk for SLO Hikers. He joins the group, schedules the event, but after a huge crashout Marcus removes him from the group and cancels the walk.
+
+**Step 1: Alex registers an account.**
+
+`POST /users`
+```json
+{
+  "name": "Alex Kim",
+  "email": "alex@example.com",
+  "password": "trailmix9"
+}
+```
+Response: `{ "user_id": 105 }`
+
+**Step 2: Alex joins SLO Hikers (group 55).**
+
+`POST /groups/55/members`
+```json
+{ "user_id": 105 }
+```
+Response: `{ "group_id": 55, "user_id": 105, "role": "member" }`
+
+**Step 3: Alex creates a group event**
+
+`POST /groups/55/events`
+```json
+{
+  "created_by": 105,
+  "title": "Laguna Lake Sunset Loop",
+  "location": "Laguna Lake Park, SLO",
+  "start_time": "2026-05-17T18:30:00",
+  "end_time": "2026-05-17T20:00:00",
+  "capacity": 15
+}
+```
+Response: `{ "event_id": 202, "group_id": 55, "capacity": 15 }`
+
+**Step 4: Marcus removes Alex from the group**
+
+`DELETE /groups/55/members/105`
+
+Response: `{ "group_id": 55, "user_id": 105, "removed": true }`
+
+**Step 5: Marcus cancels the event as group owner.**
+
+`DELETE /groups/55/events/202`
+
+Response: `{ "event_id": 202, "group_id": 55, "status": "cancelled" }`
+
+### Members who had seen the sunset loop on the calendar are notified by the cancellation and the event no longer appears as active for group 55.
+---
+
