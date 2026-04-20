@@ -64,3 +64,76 @@ Response: `{ "group_id": 55, "user_id": 102, "role": "organizer" }`
 Priya is now a trusted organizer and can create and manage events within the SLO Hikers group.
 
 ---
+## Flow 2: Organizer Creates an Event, Members RSVP, Organizer Checks Attendance
+
+Priya creates an upcoming hike, three members RSVP, and Priya reviews the attendance list before the event.
+
+**Step 1 — Two more members join the group.**
+
+`POST /groups/55/members` → `{ "user_id": 103 }` → Jordan joins as `member`  
+`POST /groups/55/members` → `{ "user_id": 104 }` → Sam joins as `member`
+
+**Step 2 — Priya creates an event with a capacity of 10.**
+
+`POST /groups/55/events`
+```json
+{
+  "created_by": 102,
+  "title": "Bishop Peak Morning Hike",
+  "location": "Bishop Peak Trailhead, SLO",
+  "start_time": "2026-05-10T08:00:00",
+  "end_time": "2026-05-10T12:00:00",
+  "capacity": 10
+}
+```
+Response: `{ "event_id": 201, "group_id": 55, "capacity": 10 }`
+
+**Step 3 — Marcus RSVPs as going.**
+
+`POST /events/201/rsvp`
+```json
+{ "user_id": 101, "status": "going" }
+```
+Response: `{ "event_id": 201, "user_id": 101, "status": "going" }`
+
+**Step 4 — Jordan RSVPs as maybe.**
+
+`POST /events/201/rsvp`
+```json
+{ "user_id": 103, "status": "maybe" }
+```
+Response: `{ "event_id": 201, "user_id": 103, "status": "maybe" }`
+
+**Step 5 — Sam RSVPs as going.**
+
+`POST /events/201/rsvp`
+```json
+{ "user_id": 104, "status": "going" }
+```
+Response: `{ "event_id": 201, "user_id": 104, "status": "going" }`
+
+**Step 6 — Priya pulls the RSVP list to plan logistics.**
+
+`GET /events/201/rsvps?requested_by=102`
+
+Response:
+```json
+{
+  "event_id": 201,
+  "title": "Bishop Peak Morning Hike",
+  "capacity": 10,
+  "going_count": 2,
+  "maybe_count": 1,
+  "not_going_count": 0,
+  "rsvps": [
+    { "user_id": 101, "name": "Marcus Webb", "status": "going" },
+    { "user_id": 103, "name": "Jordan Lee", "status": "maybe" },
+    { "user_id": 104, "name": "Sam Torres", "status": "going" }
+  ]
+}
+```
+
+Priya can see 2 confirmed attendees and 1 maybe. She plans for 3 carpools to be safe.
+
+---
+
