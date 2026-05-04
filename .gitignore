@@ -1,0 +1,10 @@
+# secrets - never commit DB credentials
+alembic.ini
+
+# Python
+__pycache__/
+*.py[cod]
+*.env
+.env
+.venv/
+venv/
