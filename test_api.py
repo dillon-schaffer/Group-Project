@@ -1,16 +1,15 @@
 """
 Test suite for Group and Event Coordination API
 """
-from typing import List
+import os
+os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 import models
-import schemas
-from database import get_db
 from main import app
 
 # Use an in-memory SQLite database for testing
@@ -19,27 +18,33 @@ engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-@pytest.fixture()
+def override_get_db():
+    """Override database dependency with test database"""
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture(scope="function", autouse=True)
 def test_db():
     """Create a fresh database for each test"""
+    # Create tables
     models.Base.metadata.create_all(bind=engine)
     yield
+    # Drop tables after test
     models.Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture()
 def client(test_db):
-    """Override database dependency with test database"""
-    def override_get_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
+    """Get test client with overridden database"""
+    from database import get_db
     
     app.dependency_overrides[get_db] = override_get_db
-    client = TestClient(app)
-    yield client
+    with TestClient(app) as test_client:
+        yield test_client
     app.dependency_overrides.clear()
 
 
