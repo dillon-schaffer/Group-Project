@@ -1,10 +1,13 @@
 from logging.config import fileConfig
 import os
 
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+
+load_dotenv()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -19,7 +22,8 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = None
+from models import Base
+target_metadata = Base.metadata
 
 
 def normalize_database_url(url: str) -> str:
@@ -31,7 +35,9 @@ def normalize_database_url(url: str) -> str:
 
 
 database_url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
-config.set_main_option("sqlalchemy.url", normalize_database_url(database_url))
+# Escape % characters for configparser (% -> %%)
+normalized_url = normalize_database_url(database_url).replace("%", "%%")
+config.set_main_option("sqlalchemy.url", normalized_url)
 
 
 def run_migrations_offline() -> None:

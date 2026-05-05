@@ -1,8 +1,11 @@
 import os
 from collections.abc import Generator
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+load_dotenv()
 
 
 def normalize_database_url(url: str) -> str:
