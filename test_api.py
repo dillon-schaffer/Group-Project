@@ -6,46 +6,104 @@ os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+import sqlalchemy
 
-import models
 from main import app
+from database import engine
 
-# Use an in-memory SQLite database for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# SQL to create test database schema
+CREATE_SCHEMA_SQL = """
+CREATE TABLE users (
+    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR NOT NULL,
+    email VARCHAR NOT NULL UNIQUE,
+    password_hash VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
+CREATE TABLE groups (
+    group_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR NOT NULL,
+    description TEXT,
+    created_by INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+);
 
-def override_get_db():
-    """Override database dependency with test database"""
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+CREATE TABLE group_memberships (
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    role VARCHAR NOT NULL CHECK(role IN ('owner', 'organizer', 'member')),
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (group_id, user_id),
+    FOREIGN KEY (group_id) REFERENCES groups(group_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    created_by INTEGER NOT NULL,
+    title VARCHAR NOT NULL,
+    location VARCHAR NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
+    capacity INTEGER NOT NULL CHECK(capacity > 0),
+    status VARCHAR NOT NULL CHECK(status IN ('active', 'cancelled')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES groups(group_id),
+    FOREIGN KEY (created_by) REFERENCES users(user_id)
+);
+
+CREATE TABLE rsvps (
+    event_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    status VARCHAR NOT NULL CHECK(status IN ('going', 'maybe', 'not going')),
+    rsvp_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (event_id, user_id),
+    FOREIGN KEY (event_id) REFERENCES events(event_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+"""
+
+DROP_SCHEMA_SQL = """
+DROP TABLE IF EXISTS rsvps;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS group_memberships;
+DROP TABLE IF EXISTS groups;
+DROP TABLE IF EXISTS users;
+"""
 
 
 @pytest.fixture(scope="function", autouse=True)
 def test_db():
     """Create a fresh database for each test"""
+    # Drop existing tables
+    with engine.begin() as connection:
+        for statement in DROP_SCHEMA_SQL.strip().split(';'):
+            if statement.strip():
+                connection.execute(sqlalchemy.text(statement))
+    
     # Create tables
-    models.Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        for statement in CREATE_SCHEMA_SQL.strip().split(';'):
+            if statement.strip():
+                connection.execute(sqlalchemy.text(statement))
+    
     yield
+    
     # Drop tables after test
-    models.Base.metadata.drop_all(bind=engine)
+    with engine.begin() as connection:
+        for statement in DROP_SCHEMA_SQL.strip().split(';'):
+            if statement.strip():
+                connection.execute(sqlalchemy.text(statement))
 
 
 @pytest.fixture()
 def client(test_db):
-    """Get test client with overridden database"""
-    from database import get_db
-    
-    app.dependency_overrides[get_db] = override_get_db
+    """Get test client"""
     with TestClient(app) as test_client:
         yield test_client
-    app.dependency_overrides.clear()
 
 
 def test_create_user(client):
