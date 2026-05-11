@@ -8,46 +8,31 @@ from database import engine
 app = FastAPI(
     title="Event & Group Coordination API",
     description="API for managing groups, events, and RSVPs",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 
 @app.get("/")
 def root():
-    """Health check endpoint."""
     return {"status": "healthy", "message": "Event & Group Coordination API"}
 
 
 @app.post("/users", response_model=schemas.UserCreated, status_code=status.HTTP_201_CREATED)
 def create_user(user: schemas.UserCreate):
-    """
-    Create a new user account.
-    
-    The password will be securely hashed before storage.
-    """
-    # Hash the password
     password_hash = bcrypt.hashpw(user.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    
+
     with engine.begin() as connection:
-        # Check if email already exists
         existing_user = connection.execute(
-            sqlalchemy.text(
-                """
-                SELECT user_id
-                FROM users
-                WHERE email = :email
-                """
-            ),
+            sqlalchemy.text("SELECT user_id FROM users WHERE email = :email"),
             {"email": user.email}
         ).fetchone()
-        
+
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A user with this email already exists",
             )
-        
-        # Insert new user
+
         user_id = connection.execute(
             sqlalchemy.text(
                 """
@@ -58,37 +43,24 @@ def create_user(user: schemas.UserCreate):
             ),
             {"name": user.name, "email": user.email, "password_hash": password_hash}
         ).scalar_one()
-        
+
         return schemas.UserCreated(user_id=user_id)
 
 
 @app.post("/groups", response_model=schemas.GroupCreated, status_code=status.HTTP_201_CREATED)
 def create_group(group: schemas.GroupCreate):
-    """
-    Create a new group.
-    
-    The creator is automatically assigned the 'owner' role.
-    """
     with engine.begin() as connection:
-        # Verify the creator exists
         creator = connection.execute(
-            sqlalchemy.text(
-                """
-                SELECT user_id
-                FROM users
-                WHERE user_id = :user_id
-                """
-            ),
+            sqlalchemy.text("SELECT user_id FROM users WHERE user_id = :user_id"),
             {"user_id": group.created_by}
         ).fetchone()
-        
+
         if not creator:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"User {group.created_by} not found",
             )
-        
-        # Insert new group
+
         group_id = connection.execute(
             sqlalchemy.text(
                 """
@@ -99,8 +71,7 @@ def create_group(group: schemas.GroupCreate):
             ),
             {"name": group.name, "description": group.description, "created_by": group.created_by}
         ).scalar_one()
-        
-        # Add creator as owner
+
         connection.execute(
             sqlalchemy.text(
                 """
@@ -110,76 +81,48 @@ def create_group(group: schemas.GroupCreate):
             ),
             {"group_id": group_id, "user_id": group.created_by}
         )
-        
-        return schemas.GroupCreated(
-            group_id=group_id,
-            owner_id=group.created_by,
-        )
+
+        return schemas.GroupCreated(group_id=group_id, owner_id=group.created_by)
 
 
 @app.post("/groups/{group_id}/members", response_model=schemas.MembershipOut, status_code=status.HTTP_201_CREATED)
 def add_group_member(group_id: int, member: schemas.MemberCreate):
-    """
-    Add a member to a group.
-    
-    New members are assigned the 'member' role by default.
-    """
     with engine.begin() as connection:
-        # Verify the group exists
         group = connection.execute(
-            sqlalchemy.text(
-                """
-                SELECT group_id
-                FROM groups
-                WHERE group_id = :group_id
-                """
-            ),
+            sqlalchemy.text("SELECT group_id FROM groups WHERE group_id = :group_id"),
             {"group_id": group_id}
         ).fetchone()
-        
+
         if not group:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Group {group_id} not found",
             )
-        
-        # Verify the user exists
+
         user = connection.execute(
-            sqlalchemy.text(
-                """
-                SELECT user_id
-                FROM users
-                WHERE user_id = :user_id
-                """
-            ),
+            sqlalchemy.text("SELECT user_id FROM users WHERE user_id = :user_id"),
             {"user_id": member.user_id}
         ).fetchone()
-        
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"User {member.user_id} not found",
             )
-        
-        # Check if already a member
+
         existing = connection.execute(
             sqlalchemy.text(
-                """
-                SELECT group_id
-                FROM group_memberships
-                WHERE group_id = :group_id AND user_id = :user_id
-                """
+                "SELECT group_id FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
             ),
             {"group_id": group_id, "user_id": member.user_id}
         ).fetchone()
-        
+
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"User {member.user_id} is already a member of group {group_id}",
             )
-        
-        # Add membership
+
         connection.execute(
             sqlalchemy.text(
                 """
@@ -189,66 +132,45 @@ def add_group_member(group_id: int, member: schemas.MemberCreate):
             ),
             {"group_id": group_id, "user_id": member.user_id}
         )
-        
-        return schemas.MembershipOut(
-            group_id=group_id,
-            user_id=member.user_id,
-            role="member",
-        )
+
+        return schemas.MembershipOut(group_id=group_id, user_id=member.user_id, role="member")
 
 
 @app.patch("/groups/{group_id}/members/{user_id}", response_model=schemas.MembershipOut)
 def update_member_role(group_id: int, user_id: int, update: schemas.MemberRoleUpdate):
-    """
-    Update a member's role within a group.
-    
-    Only owners can promote members to organizer or demote organizers.
-    """
     with engine.begin() as connection:
-        # Verify the requester is an owner
         requester_membership = connection.execute(
             sqlalchemy.text(
-                """
-                SELECT role
-                FROM group_memberships
-                WHERE group_id = :group_id AND user_id = :user_id
-                """
+                "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
             ),
             {"group_id": group_id, "user_id": update.requested_by}
         ).fetchone()
-        
+
         if not requester_membership or requester_membership.role != "owner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only group owners can change member roles",
             )
-        
-        # Get the target membership
+
         membership = connection.execute(
             sqlalchemy.text(
-                """
-                SELECT role
-                FROM group_memberships
-                WHERE group_id = :group_id AND user_id = :user_id
-                """
+                "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
             ),
             {"group_id": group_id, "user_id": user_id}
         ).fetchone()
-        
+
         if not membership:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"User {user_id} is not a member of group {group_id}",
             )
-        
-        # Prevent changing owner role
+
         if membership.role == "owner" or update.role == "owner":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot change owner role",
             )
-        
-        # Update the role
+
         connection.execute(
             sqlalchemy.text(
                 """
@@ -259,66 +181,88 @@ def update_member_role(group_id: int, user_id: int, update: schemas.MemberRoleUp
             ),
             {"role": update.role, "group_id": group_id, "user_id": user_id}
         )
-        
-        return schemas.MembershipOut(
-            group_id=group_id,
-            user_id=user_id,
-            role=update.role,
+
+        return schemas.MembershipOut(group_id=group_id, user_id=user_id, role=update.role)
+
+
+@app.delete("/groups/{group_id}/members/{user_id}", response_model=schemas.MemberRemoved)
+def remove_group_member(group_id: int, user_id: int, requested_by: int):
+    with engine.begin() as connection:
+        requester = connection.execute(
+            sqlalchemy.text(
+                "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
+            ),
+            {"group_id": group_id, "user_id": requested_by}
+        ).fetchone()
+
+        if not requester or requester.role != "owner":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only group owners can remove members",
+            )
+
+        target = connection.execute(
+            sqlalchemy.text(
+                "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
+            ),
+            {"group_id": group_id, "user_id": user_id}
+        ).fetchone()
+
+        if not target:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {user_id} is not a member of group {group_id}",
+            )
+
+        if target.role == "owner":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove the group owner",
+            )
+
+        connection.execute(
+            sqlalchemy.text(
+                "DELETE FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
+            ),
+            {"group_id": group_id, "user_id": user_id}
         )
+
+        return schemas.MemberRemoved(group_id=group_id, user_id=user_id, removed=True)
 
 
 @app.post("/groups/{group_id}/events", response_model=schemas.EventCreated, status_code=status.HTTP_201_CREATED)
 def create_event(group_id: int, event: schemas.EventCreate):
-    """
-    Create a new event within a group.
-    
-    Only group owners and organizers can create events.
-    """
     with engine.begin() as connection:
-        # Verify the group exists
         group = connection.execute(
-            sqlalchemy.text(
-                """
-                SELECT group_id
-                FROM groups
-                WHERE group_id = :group_id
-                """
-            ),
+            sqlalchemy.text("SELECT group_id FROM groups WHERE group_id = :group_id"),
             {"group_id": group_id}
         ).fetchone()
-        
+
         if not group:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Group {group_id} not found",
             )
-        
-        # Verify the creator is an owner or organizer
+
         membership = connection.execute(
             sqlalchemy.text(
-                """
-                SELECT role
-                FROM group_memberships
-                WHERE group_id = :group_id AND user_id = :user_id
-                """
+                "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
             ),
             {"group_id": group_id, "user_id": event.created_by}
         ).fetchone()
-        
+
         if not membership or membership.role not in ("owner", "organizer"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only group owners and organizers can create events",
             )
-        
-        # Validate time range
+
         if event.end_time <= event.start_time:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Event end time must be after start time",
             )
-        
-        # Create the event
+
         event_id = connection.execute(
             sqlalchemy.text(
                 """
@@ -340,106 +284,180 @@ def create_event(group_id: int, event: schemas.EventCreate):
                 "location": event.location,
                 "start_time": event.start_time,
                 "end_time": event.end_time,
-                "capacity": event.capacity
+                "capacity": event.capacity,
             }
         ).scalar_one()
-        
-        return schemas.EventCreated(
-            event_id=event_id,
-            group_id=group_id,
-            capacity=event.capacity,
+
+        return schemas.EventCreated(event_id=event_id, group_id=group_id, capacity=event.capacity)
+
+
+@app.delete("/groups/{group_id}/events/{event_id}", response_model=schemas.EventCancelled)
+def cancel_event(group_id: int, event_id: int, requested_by: int):
+    with engine.begin() as connection:
+        requester = connection.execute(
+            sqlalchemy.text(
+                "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
+            ),
+            {"group_id": group_id, "user_id": requested_by}
+        ).fetchone()
+
+        if not requester or requester.role != "owner":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only group owners can cancel events",
+            )
+
+        event = connection.execute(
+            sqlalchemy.text(
+                "SELECT event_id, status FROM events WHERE event_id = :event_id AND group_id = :group_id"
+            ),
+            {"event_id": event_id, "group_id": group_id}
+        ).fetchone()
+
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Event {event_id} not found in group {group_id}",
+            )
+
+        if event.status == "cancelled":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Event is already cancelled",
+            )
+
+        connection.execute(
+            sqlalchemy.text(
+                "UPDATE events SET status = 'cancelled' WHERE event_id = :event_id"
+            ),
+            {"event_id": event_id}
         )
+
+        return schemas.EventCancelled(event_id=event_id, group_id=group_id, status="cancelled")
 
 
 @app.post("/events/{event_id}/rsvp", response_model=schemas.RsvpOut)
 def create_or_update_rsvp(event_id: int, rsvp: schemas.RsvpCreate):
-    """
-    RSVP to an event or update an existing RSVP.
-    
-    Users can only RSVP if they are members of the event's group.
-    """
     with engine.begin() as connection:
-        # Verify the event exists and get group_id
         event = connection.execute(
-            sqlalchemy.text(
-                """
-                SELECT group_id, status
-                FROM events
-                WHERE event_id = :event_id
-                """
-            ),
+            sqlalchemy.text("SELECT group_id, status FROM events WHERE event_id = :event_id"),
             {"event_id": event_id}
         ).fetchone()
-        
+
         if not event:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Event {event_id} not found",
             )
-        
-        # Verify user is a member of the group
-        membership = connection.execute(
-            sqlalchemy.text(
-                """
-                SELECT user_id
-                FROM group_memberships
-                WHERE group_id = :group_id AND user_id = :user_id
-                """
-            ),
-            {"group_id": event.group_id, "user_id": rsvp.user_id}
-        ).fetchone()
-        
-        if not membership:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only group members can RSVP to events",
-            )
-        
-        # Check if event is active
+
         if event.status != "active":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot RSVP to a cancelled event",
             )
-        
-        # Check if RSVP already exists
+
+        membership = connection.execute(
+            sqlalchemy.text(
+                "SELECT user_id FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
+            ),
+            {"group_id": event.group_id, "user_id": rsvp.user_id}
+        ).fetchone()
+
+        if not membership:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only group members can RSVP to events",
+            )
+
         existing_rsvp = connection.execute(
             sqlalchemy.text(
-                """
-                SELECT event_id
-                FROM rsvps
-                WHERE event_id = :event_id AND user_id = :user_id
-                """
+                "SELECT event_id FROM rsvps WHERE event_id = :event_id AND user_id = :user_id"
             ),
             {"event_id": event_id, "user_id": rsvp.user_id}
         ).fetchone()
-        
+
         if existing_rsvp:
-            # Update existing RSVP
             connection.execute(
                 sqlalchemy.text(
                     """
                     UPDATE rsvps
-                    SET status = :status, rsvp_at = CURRENT_TIMESTAMP
+                    SET status = :status, updated_at = CURRENT_TIMESTAMP
                     WHERE event_id = :event_id AND user_id = :user_id
                     """
                 ),
                 {"status": rsvp.status, "event_id": event_id, "user_id": rsvp.user_id}
             )
         else:
-            # Create new RSVP
             connection.execute(
                 sqlalchemy.text(
                     """
-                    INSERT INTO rsvps (event_id, user_id, status, rsvp_at)
+                    INSERT INTO rsvps (event_id, user_id, status, updated_at)
                     VALUES (:event_id, :user_id, :status, CURRENT_TIMESTAMP)
                     """
                 ),
                 {"event_id": event_id, "user_id": rsvp.user_id, "status": rsvp.status}
             )
-        
-        return schemas.RsvpOut(
+
+        return schemas.RsvpOut(event_id=event_id, user_id=rsvp.user_id, status=rsvp.status)
+
+
+@app.get("/events/{event_id}/rsvps", response_model=schemas.EventRsvpSummary)
+def get_event_rsvps(event_id: int, requested_by: int):
+    with engine.begin() as connection:
+        event = connection.execute(
+            sqlalchemy.text(
+                "SELECT event_id, group_id, title, capacity, status FROM events WHERE event_id = :event_id"
+            ),
+            {"event_id": event_id}
+        ).fetchone()
+
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Event {event_id} not found",
+            )
+
+        membership = connection.execute(
+            sqlalchemy.text(
+                "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
+            ),
+            {"group_id": event.group_id, "user_id": requested_by}
+        ).fetchone()
+
+        if not membership or membership.role not in ("owner", "organizer"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only group owners and organizers can view the RSVP list",
+            )
+
+        rsvp_rows = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT r.user_id, u.name, r.status
+                FROM rsvps r
+                JOIN users u ON u.user_id = r.user_id
+                WHERE r.event_id = :event_id
+                ORDER BY r.updated_at
+                """
+            ),
+            {"event_id": event_id}
+        ).fetchall()
+
+        rsvps = [
+            schemas.RsvpListItem(user_id=row.user_id, name=row.name, status=row.status)
+            for row in rsvp_rows
+        ]
+
+        going_count = sum(1 for r in rsvps if r.status == "going")
+        maybe_count = sum(1 for r in rsvps if r.status == "maybe")
+        not_going_count = sum(1 for r in rsvps if r.status == "not going")
+
+        return schemas.EventRsvpSummary(
             event_id=event_id,
-            user_id=rsvp.user_id,
-            status=rsvp.status,
+            title=event.title,
+            capacity=event.capacity,
+            going_count=going_count,
+            maybe_count=maybe_count,
+            not_going_count=not_going_count,
+            rsvps=rsvps,
         )
