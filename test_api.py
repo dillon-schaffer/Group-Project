@@ -59,7 +59,7 @@ CREATE TABLE rsvps (
     event_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     status VARCHAR NOT NULL CHECK(status IN ('going', 'maybe', 'not going')),
-    rsvp_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (event_id, user_id),
     FOREIGN KEY (event_id) REFERENCES events(event_id),
     FOREIGN KEY (user_id) REFERENCES users(user_id)

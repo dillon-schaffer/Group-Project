@@ -80,7 +80,9 @@ curl -X 'POST' \
 
 2. Response received:
 ```json
-TODO: paste actual response here
+{
+  "user_id": 1
+}
 ```
 
 ## Step 2 - Priya registers an account
@@ -100,7 +102,9 @@ curl -X 'POST' \
 
 2. Response received:
 ```json
-TODO: paste actual response here
+{
+  "user_id": 2
+}
 ```
 
 ## Step 3 - Marcus creates the group
@@ -122,7 +126,10 @@ curl -X 'POST' \
 
 2. Response received:
 ```json
-TODO: paste actual response here
+{
+  "group_id": 1,
+  "owner_id": 1
+}
 ```
 
 ## Step 4 - Priya joins the group
@@ -142,7 +149,11 @@ curl -X 'POST' \
 
 2. Response received:
 ```json
-TODO: paste actual response here
+{
+  "group_id": 1,
+  "user_id": 2,
+  "role": "member"
+}
 ```
 
 ## Step 5 - Marcus promotes Priya to organizer
@@ -163,5 +174,9 @@ curl -X 'PATCH' \
 
 2. Response received:
 ```json
-TODO: paste actual response here
+{
+  "group_id": 1,
+  "user_id": 2,
+  "role": "organizer"
+}
 ```
