@@ -68,7 +68,27 @@ Priya is now a trusted organizer and can create and manage events within the SLO
 
 Priya creates an upcoming hike, three members RSVP, and Priya reviews the attendance list before the event.
 
-**Step 1 — Two more members join the group.**
+**Step 1 — Two more users register and join the group.**
+
+`POST /users`
+```json
+{
+  "name": "Jordan Lee",
+  "email": "jordan@example.com",
+  "password": "peaks4days"
+}
+```
+Response: `{ "user_id": 103 }`
+
+`POST /users`
+```json
+{
+  "name": "Sam Torres",
+  "email": "sam@example.com",
+  "password": "trailtime"
+}
+```
+Response: `{ "user_id": 104 }`
 
 `POST /groups/55/members` → `{ "user_id": 103 }` → Jordan joins as `member`  
 `POST /groups/55/members` → `{ "user_id": 104 }` → Sam joins as `member`
@@ -139,7 +159,7 @@ Priya can see 2 confirmed attendees and 1 maybe. She plans for 3 carpools to be 
 
 ## Flow 3: User joins a group, creates an event, is removed from the group and the event is cancelled by the group owner.
 
-Alex wants to host a sunset walk for SLO Hikers. He joins the group, schedules the event, but after a huge crashout Marcus removes him from the group and cancels the walk.
+Alex wants to host a sunset walk for SLO Hikers. He joins the group, is promoted to organizer, schedules the event, and then Marcus removes him from the group and cancels the walk.
 
 **Step 1: Alex registers an account.**
 
@@ -161,7 +181,33 @@ Response: `{ "user_id": 105 }`
 ```
 Response: `{ "group_id": 55, "user_id": 105, "role": "member" }`
 
-**Step 3: Alex creates a group event**
+**Step 3: Alex attempts to create a group event as a member.**
+
+`POST /groups/55/events`
+```json
+{
+  "created_by": 105,
+  "title": "Laguna Lake Sunset Loop",
+  "location": "Laguna Lake Park, SLO",
+  "start_time": "2026-05-17T18:30:00",
+  "end_time": "2026-05-17T20:00:00",
+  "capacity": 15
+}
+```
+Response: `{ "detail": "Only group owners and organizers can create events" }`
+
+**Step 3a: Marcus promotes Alex to organizer.**
+
+`PATCH /groups/55/members/105`
+```json
+{
+  "role": "organizer",
+  "requested_by": 101
+}
+```
+Response: `{ "group_id": 55, "user_id": 105, "role": "organizer" }`
+
+**Step 3b: Alex creates a group event as organizer.**
 
 `POST /groups/55/events`
 ```json
@@ -178,16 +224,15 @@ Response: `{ "event_id": 202, "group_id": 55, "capacity": 15 }`
 
 **Step 4: Marcus removes Alex from the group**
 
-`DELETE /groups/55/members/105`
+`DELETE /groups/55/members/105?requested_by=101`
 
 Response: `{ "group_id": 55, "user_id": 105, "removed": true }`
 
 **Step 5: Marcus cancels the event as group owner.**
 
-`DELETE /groups/55/events/202`
+`DELETE /groups/55/events/202?requested_by=101`
 
 Response: `{ "event_id": 202, "group_id": 55, "status": "cancelled" }`
 
 ### Members who had seen the sunset loop on the calendar are notified by the cancellation and the event no longer appears as active for group 55.
 ---
-

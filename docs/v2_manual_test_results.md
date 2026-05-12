@@ -9,7 +9,27 @@ Priya creates an upcoming hike, three members RSVP, and Priya reviews the attend
 - Priya user_id = 2 (organizer)
 - SLO Hikers group_id = 1
 
-**Step 1 - Two more members join the group.**
+**Step 1 - Two more users register and join the group.**
+
+`POST /users`
+```json
+{
+  "name": "Jordan Lee",
+  "email": "jordan@example.com",
+  "password": "peaks4days"
+}
+```
+Response: `{ "user_id": 3 }`
+
+`POST /users`
+```json
+{
+  "name": "Sam Torres",
+  "email": "sam@example.com",
+  "password": "trailtime"
+}
+```
+Response: `{ "user_id": 4 }`
 
 `POST /groups/1/members` -> `{ "user_id": 3 }` -> Jordan joins as `member`
 
@@ -127,6 +147,50 @@ Alex wants to host a sunset walk for SLO Hikers. He joins the group, is promoted
 ---
 
 # Testing results
+
+## Flow 2 - Step 1 - Jordan registers
+
+1. Curl statement called:
+```bash
+curl -X 'POST' \
+  'http://localhost:8000/users' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "name": "Jordan Lee",
+  "email": "jordan@example.com",
+  "password": "peaks4days"
+}'
+```
+
+2. Response received:
+```json
+{
+  "user_id": 3
+}
+```
+
+## Flow 2 - Step 1 - Sam registers
+
+1. Curl statement called:
+```bash
+curl -X 'POST' \
+  'http://localhost:8000/users' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "name": "Sam Torres",
+  "email": "sam@example.com",
+  "password": "trailtime"
+}'
+```
+
+2. Response received:
+```json
+{
+  "user_id": 4
+}
+```
 
 ## Flow 2 - Step 1 - Jordan joins the group
 
@@ -465,7 +529,7 @@ curl -X 'DELETE' \
 
 # V2 verification notes
 
-- Automated tests: 14 passed (`python -m pytest -q`)
+- Automated tests: 14 passed (`.venv/bin/python -m pytest -q`)
 - Alembic migrations are in use via `alembic/versions/546d0e45e534_create_initial_schema.py`, so no standalone `schema.sql` is required for this submission.
 
 # Online submission
