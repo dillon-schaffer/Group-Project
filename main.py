@@ -1,18 +1,44 @@
+import os
+
 import bcrypt
 import sqlalchemy
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Security, status
+from fastapi.security import APIKeyHeader
 
 import schemas
 from database import engine
+
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def verify_api_key(api_key: str | None = Security(api_key_header)) -> str:
+    """Verify the API key from the X-API-Key header."""
+    server_api_key = os.getenv("API_KEY")
+    
+    if not server_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API_KEY is not configured",
+        )
+    
+    if not api_key or api_key != server_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+        )
+    
+    return api_key
+
 
 app = FastAPI(
     title="Event & Group Coordination API",
     description="API for managing groups, events, and RSVPs",
     version="2.0.0",
+    dependencies=[Security(verify_api_key)],
 )
 
 
-@app.get("/")
+@app.get("/", dependencies=[])
 def root():
     return {"status": "healthy", "message": "Event & Group Coordination API"}
 

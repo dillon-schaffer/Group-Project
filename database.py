@@ -17,9 +17,13 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
-DATABASE_URL = normalize_database_url(
-    os.getenv("DATABASE_URL", "postgresql+psycopg://localhost/group_project")
+# Read from POSTGRES_URI (Supabase), then DATABASE_URL (Render), then local default
+raw_url = (
+    os.getenv("POSTGRES_URI")
+    or os.getenv("DATABASE_URL")
+    or "postgresql+psycopg://localhost/group_project"
 )
+DATABASE_URL = normalize_database_url(raw_url)
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

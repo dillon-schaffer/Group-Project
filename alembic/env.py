@@ -22,8 +22,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from models import Base
-target_metadata = Base.metadata
+target_metadata = None
 
 
 def normalize_database_url(url: str) -> str:
@@ -34,7 +33,12 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
-database_url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+# Read from POSTGRES_URI (Supabase), then DATABASE_URL (Render), then alembic.ini
+database_url = (
+    os.getenv("POSTGRES_URI")
+    or os.getenv("DATABASE_URL")
+    or config.get_main_option("sqlalchemy.url")
+)
 # Escape % characters for configparser (% -> %%)
 normalized_url = normalize_database_url(database_url).replace("%", "%%")
 config.set_main_option("sqlalchemy.url", normalized_url)
