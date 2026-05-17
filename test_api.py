@@ -3,13 +3,14 @@ Test suite for Group and Event Coordination API
 """
 import os
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+os.environ["API_KEY"] = "test-api-key"
 
 import pytest
 from fastapi.testclient import TestClient
 import sqlalchemy
 
-from main import app
-from database import engine
+from src.api.server import app
+from src.database import engine
 
 # SQL to create test database schema
 CREATE_SCHEMA_SQL = """
