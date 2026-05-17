@@ -1,9 +1,13 @@
 import os
 from functools import lru_cache
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
-load_dotenv()
+# Load default.env first (won't override existing env vars)
+load_dotenv(dotenv_path="default.env", override=False)
+
+# Then load .env if it exists (will override default.env values)
+load_dotenv(dotenv_path=find_dotenv(".env"), override=True)
 
 
 class Settings:
