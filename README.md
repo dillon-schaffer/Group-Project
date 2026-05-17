@@ -37,7 +37,7 @@ uvicorn src.api.server:app --host 0.0.0.0 --port $PORT
 
 **Environment Variables** (set in Render dashboard):
 - `API_KEY` - Your secret API key for authentication
-- `POSTGRES_URI` - Your Supabase/PostgreSQL connection string
+- `POSTGRES_URL` or `POSTGRES_URI` or `DATABASE_URL` - Your Supabase/PostgreSQL connection string
 
 ## API Documentation
 

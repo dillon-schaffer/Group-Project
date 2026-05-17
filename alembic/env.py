@@ -33,9 +33,10 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
-# Read from POSTGRES_URI (Supabase), then DATABASE_URL (Render), then alembic.ini
+# Read from POSTGRES_URI (Supabase), POSTGRES_URL (Render), DATABASE_URL, then alembic.ini
 database_url = (
     os.getenv("POSTGRES_URI")
+    or os.getenv("POSTGRES_URL")
     or os.getenv("DATABASE_URL")
     or config.get_main_option("sqlalchemy.url")
 )
