@@ -109,3 +109,60 @@ class EventRsvpSummary(BaseModel):
     maybe_count: int
     not_going_count: int
     rsvps: list[RsvpListItem]
+
+
+# Complex endpoint schemas
+
+class DashboardGroupItem(BaseModel):
+    group_id: int
+    name: str
+    role: MembershipRole
+    member_count: int
+
+
+class DashboardEventItem(BaseModel):
+    event_id: int
+    group_id: int
+    group_name: str
+    title: str
+    location: str
+    start_time: datetime
+    end_time: datetime
+    capacity: int
+    going_count: int
+    rsvp_status: RsvpStatus | None = None
+
+
+class UserDashboard(BaseModel):
+    user_id: int
+    user_name: str
+    groups: list[DashboardGroupItem]
+    attending_events: list[DashboardEventItem]
+    pending_rsvps: list[DashboardEventItem]
+    total_groups: int
+    total_attending: int
+    total_pending: int
+
+
+class MemberActivityItem(BaseModel):
+    user_id: int
+    name: str
+    role: MembershipRole
+    events_created: int
+    rsvps_made: int
+
+
+class GroupAnalytics(BaseModel):
+    group_id: int
+    group_name: str
+    total_members: int
+    owners_count: int
+    organizers_count: int
+    members_count: int
+    total_events: int
+    active_events: int
+    cancelled_events: int
+    past_events: int
+    future_events: int
+    average_rsvp_rate: float
+    most_active_members: list[MemberActivityItem]

@@ -197,3 +197,155 @@ def remove_group_member(group_id: int, user_id: int, requested_by: int):
         )
 
         return schemas.MemberRemoved(group_id=group_id, user_id=user_id, removed=True)
+
+
+@router.get("/{group_id}/analytics", response_model=schemas.GroupAnalytics)
+def get_group_analytics(group_id: int, requested_by: int):
+    """
+    Get comprehensive analytics for a group.
+    
+    Returns:
+    - Member statistics by role
+    - Event statistics (total, active, cancelled, past, future)
+    - Average RSVP rate across all events
+    - Most active members (by events created and RSVPs made)
+    
+    Only accessible by group members.
+    """
+    with db.engine.begin() as connection:
+        # Check if group exists
+        group = connection.execute(
+            sqlalchemy.text("SELECT group_id, name FROM groups WHERE group_id = :group_id"),
+            {"group_id": group_id}
+        ).fetchone()
+
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Group {group_id} not found",
+            )
+
+        # Verify requester is a member
+        membership = connection.execute(
+            sqlalchemy.text(
+                "SELECT user_id FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
+            ),
+            {"group_id": group_id, "user_id": requested_by}
+        ).fetchone()
+
+        if not membership:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only group members can view analytics",
+            )
+
+        # Get member counts by role
+        member_stats = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 
+                    COUNT(*) as total_members,
+                    COUNT(CASE WHEN role = 'owner' THEN 1 END) as owners_count,
+                    COUNT(CASE WHEN role = 'organizer' THEN 1 END) as organizers_count,
+                    COUNT(CASE WHEN role = 'member' THEN 1 END) as members_count
+                FROM group_memberships
+                WHERE group_id = :group_id
+                """
+            ),
+            {"group_id": group_id}
+        ).fetchone()
+
+        # Get event statistics
+        event_stats = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 
+                    COUNT(*) as total_events,
+                    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_events,
+                    COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_events,
+                    COUNT(CASE WHEN start_time < CURRENT_TIMESTAMP THEN 1 END) as past_events,
+                    COUNT(CASE WHEN start_time >= CURRENT_TIMESTAMP THEN 1 END) as future_events
+                FROM events
+                WHERE group_id = :group_id
+                """
+            ),
+            {"group_id": group_id}
+        ).fetchone()
+
+        # Calculate average RSVP rate
+        # RSVP rate = (total RSVPs) / (total events * total members)
+        rsvp_rate_data = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 
+                    COUNT(DISTINCT e.event_id) as event_count,
+                    COUNT(DISTINCT gm.user_id) as member_count,
+                    COUNT(r.event_id) as total_rsvps
+                FROM events e
+                CROSS JOIN group_memberships gm
+                LEFT JOIN rsvps r ON e.event_id = r.event_id AND r.user_id = gm.user_id
+                WHERE e.group_id = :group_id
+                  AND gm.group_id = :group_id
+                  AND e.status = 'active'
+                """
+            ),
+            {"group_id": group_id}
+        ).fetchone()
+
+        # Calculate average RSVP rate (avoid division by zero)
+        if rsvp_rate_data.event_count > 0 and rsvp_rate_data.member_count > 0:
+            possible_rsvps = rsvp_rate_data.event_count * rsvp_rate_data.member_count
+            average_rsvp_rate = (rsvp_rate_data.total_rsvps / possible_rsvps) * 100
+        else:
+            average_rsvp_rate = 0.0
+
+        # Get most active members
+        active_members = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 
+                    u.user_id,
+                    u.name,
+                    gm.role,
+                    COUNT(DISTINCT e.event_id) as events_created,
+                    COUNT(DISTINCT r.event_id) as rsvps_made
+                FROM users u
+                JOIN group_memberships gm ON u.user_id = gm.user_id
+                LEFT JOIN events e ON u.user_id = e.created_by AND e.group_id = :group_id
+                LEFT JOIN rsvps r ON u.user_id = r.user_id 
+                    AND r.event_id IN (SELECT event_id FROM events WHERE group_id = :group_id)
+                WHERE gm.group_id = :group_id
+                GROUP BY u.user_id, u.name, gm.role
+                ORDER BY (COUNT(DISTINCT e.event_id) + COUNT(DISTINCT r.event_id)) DESC
+                LIMIT 5
+                """
+            ),
+            {"group_id": group_id}
+        ).fetchall()
+
+        most_active = [
+            schemas.MemberActivityItem(
+                user_id=row.user_id,
+                name=row.name,
+                role=row.role,
+                events_created=row.events_created,
+                rsvps_made=row.rsvps_made
+            )
+            for row in active_members
+        ]
+
+        return schemas.GroupAnalytics(
+            group_id=group_id,
+            group_name=group.name,
+            total_members=member_stats.total_members,
+            owners_count=member_stats.owners_count,
+            organizers_count=member_stats.organizers_count,
+            members_count=member_stats.members_count,
+            total_events=event_stats.total_events,
+            active_events=event_stats.active_events,
+            cancelled_events=event_stats.cancelled_events,
+            past_events=event_stats.past_events,
+            future_events=event_stats.future_events,
+            average_rsvp_rate=round(average_rsvp_rate, 2),
+            most_active_members=most_active
+        )
