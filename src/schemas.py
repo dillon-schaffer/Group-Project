@@ -1,27 +1,47 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
+# Note: 'owner' is included for internal representation but cannot be assigned via update endpoints
 MembershipRole = Literal["owner", "organizer", "member"]
 RsvpStatus = Literal["going", "maybe", "not going"]
 
 
 class UserCreate(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=100)
     email: EmailStr
-    password: str = Field(min_length=1)
+    password: str = Field(min_length=8, max_length=128)
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one number')
+        if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in v):
+            raise ValueError('Password must contain at least one special character')
+        return v
 
 
 class UserCreated(BaseModel):
     user_id: int
 
 
+class UserProfile(BaseModel):
+    user_id: int
+    name: str
+    email: EmailStr
+    created_at: datetime
+
+
+
 class GroupCreate(BaseModel):
-    name: str = Field(min_length=1)
-    description: str | None = None
-    created_by: int
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=1000)
+    created_by: int = Field(gt=0)
 
 
 class GroupCreated(BaseModel):
@@ -29,13 +49,23 @@ class GroupCreated(BaseModel):
     owner_id: int
 
 
+class GroupDetails(BaseModel):
+    group_id: int
+    name: str
+    description: str | None
+    created_by: int
+    owner_name: str
+    member_count: int
+    created_at: datetime
+
+
 class MemberCreate(BaseModel):
-    user_id: int
+    user_id: int = Field(gt=0)
 
 
 class MemberRoleUpdate(BaseModel):
     role: MembershipRole
-    requested_by: int
+    requested_by: int = Field(gt=0)
 
 
 class MembershipOut(BaseModel):
@@ -44,19 +74,28 @@ class MembershipOut(BaseModel):
     role: MembershipRole
 
 
+class MemberListItem(BaseModel):
+    user_id: int
+    name: str
+    email: EmailStr
+    role: MembershipRole
+    joined_at: datetime
+
+
 class MemberRemoved(BaseModel):
     group_id: int
     user_id: int
     removed: bool
 
 
+
 class EventCreate(BaseModel):
-    created_by: int
-    title: str = Field(min_length=1)
-    location: str = Field(min_length=1)
+    created_by: int = Field(gt=0)
+    title: str = Field(min_length=1, max_length=200)
+    location: str = Field(min_length=1, max_length=300)
     start_time: datetime
     end_time: datetime
-    capacity: int = Field(gt=0)
+    capacity: int = Field(gt=0, le=10000)
 
 
 class EventCreated(BaseModel):
@@ -65,14 +104,46 @@ class EventCreated(BaseModel):
     capacity: int
 
 
+class EventUpdate(BaseModel):
+    requested_by: int = Field(gt=0)
+    title: str | None = Field(None, min_length=1, max_length=200)
+    location: str | None = Field(None, min_length=1, max_length=300)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    capacity: int | None = Field(None, gt=0, le=10000)
+
+
+class EventDetails(BaseModel):
+    event_id: int
+    group_id: int
+    group_name: str
+    title: str
+    location: str
+    start_time: datetime
+    end_time: datetime
+    capacity: int
+    status: str
+    created_by: int
+    creator_name: str
+    going_count: int
+    created_at: datetime
+
+
+class EventUpdated(BaseModel):
+    event_id: int
+    group_id: int
+    message: str
+
+
 class EventCancelled(BaseModel):
     event_id: int
     group_id: int
     status: str
 
 
+
 class RsvpCreate(BaseModel):
-    user_id: int
+    user_id: int = Field(gt=0)
     status: RsvpStatus
 
 

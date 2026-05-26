@@ -51,9 +51,104 @@ def create_group(group: schemas.GroupCreate):
         return schemas.GroupCreated(group_id=group_id, owner_id=group.created_by)
 
 
+@router.get("/{group_id}", response_model=schemas.GroupDetails)
+def get_group(group_id: int):
+    """Get group details."""
+    with db.engine.begin() as connection:
+        group = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 
+                    g.group_id,
+                    g.name,
+                    g.description,
+                    g.created_by,
+                    u.name as owner_name,
+                    g.created_at,
+                    COUNT(DISTINCT gm.user_id) as member_count
+                FROM groups g
+                JOIN users u ON g.created_by = u.user_id
+                LEFT JOIN group_memberships gm ON g.group_id = gm.group_id
+                WHERE g.group_id = :group_id
+                GROUP BY g.group_id, g.name, g.description, g.created_by, u.name, g.created_at
+                """
+            ),
+            {"group_id": group_id}
+        ).fetchone()
+
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Group {group_id} not found",
+            )
+
+        return schemas.GroupDetails(
+            group_id=group.group_id,
+            name=group.name,
+            description=group.description,
+            created_by=group.created_by,
+            owner_name=group.owner_name,
+            member_count=group.member_count,
+            created_at=group.created_at
+        )
+
+
+@router.get("/{group_id}/members", response_model=list[schemas.MemberListItem])
+def get_group_members(group_id: int):
+    """Get all members of a group."""
+    with db.engine.begin() as connection:
+        # Check if group exists
+        group = connection.execute(
+            sqlalchemy.text("SELECT group_id FROM groups WHERE group_id = :group_id"),
+            {"group_id": group_id}
+        ).fetchone()
+
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Group {group_id} not found",
+            )
+
+        # Get all members
+        members = connection.execute(
+            sqlalchemy.text(
+                """
+                SELECT 
+                    u.user_id,
+                    u.name,
+                    u.email,
+                    gm.role,
+                    gm.joined_at
+                FROM group_memberships gm
+                JOIN users u ON gm.user_id = u.user_id
+                WHERE gm.group_id = :group_id
+                ORDER BY 
+                    CASE gm.role 
+                        WHEN 'owner' THEN 1 
+                        WHEN 'organizer' THEN 2 
+                        ELSE 3 
+                    END,
+                    gm.joined_at
+                """
+            ),
+            {"group_id": group_id}
+        ).fetchall()
+
+        return [
+            schemas.MemberListItem(
+                user_id=row.user_id,
+                name=row.name,
+                email=row.email,
+                role=row.role,
+                joined_at=row.joined_at
+            )
+            for row in members
+        ]
+
+
 @router.post("/{group_id}/members", response_model=schemas.MembershipOut, status_code=status.HTTP_201_CREATED)
 def add_group_member(group_id: int, member: schemas.MemberCreate):
-    """Add a member to a group."""
+    """Add a member to a group (anyone can join)."""
     with db.engine.begin() as connection:
         group = connection.execute(
             sqlalchemy.text("SELECT group_id FROM groups WHERE group_id = :group_id"),
@@ -87,7 +182,7 @@ def add_group_member(group_id: int, member: schemas.MemberCreate):
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"User {member.user_id} is already a member of group {group_id}",
+                detail="User is already a member of this group",
             )
 
         connection.execute(
@@ -155,20 +250,25 @@ def update_member_role(group_id: int, user_id: int, update: schemas.MemberRoleUp
 
 @router.delete("/{group_id}/members/{user_id}", response_model=schemas.MemberRemoved)
 def remove_group_member(group_id: int, user_id: int, requested_by: int):
-    """Remove a member from a group."""
+    """Remove a member from a group. Owners can remove any member; users can remove themselves."""
     with db.engine.begin() as connection:
-        requester = connection.execute(
-            sqlalchemy.text(
-                "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
-            ),
-            {"group_id": group_id, "user_id": requested_by}
-        ).fetchone()
+        # Check if user is removing themselves (self-removal)
+        is_self_removal = (user_id == requested_by)
+        
+        if not is_self_removal:
+            # If not self-removal, must be owner
+            requester = connection.execute(
+                sqlalchemy.text(
+                    "SELECT role FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"
+                ),
+                {"group_id": group_id, "user_id": requested_by}
+            ).fetchone()
 
-        if not requester or requester.role != "owner":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only group owners can remove members",
-            )
+            if not requester or requester.role != "owner":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only group owners can remove members, or users can remove themselves",
+                )
 
         target = connection.execute(
             sqlalchemy.text(
@@ -189,6 +289,19 @@ def remove_group_member(group_id: int, user_id: int, requested_by: int):
                 detail="Cannot remove the group owner",
             )
 
+        # Delete all RSVPs for this user for events in this group (per user story exception #12)
+        connection.execute(
+            sqlalchemy.text(
+                """
+                DELETE FROM rsvps
+                WHERE user_id = :user_id
+                  AND event_id IN (SELECT event_id FROM events WHERE group_id = :group_id)
+                """
+            ),
+            {"user_id": user_id, "group_id": group_id}
+        )
+
+        # Delete the membership
         connection.execute(
             sqlalchemy.text(
                 "DELETE FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"

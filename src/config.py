@@ -1,7 +1,11 @@
 import os
+import logging
 from functools import lru_cache
 
 from dotenv import find_dotenv, load_dotenv
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Load default.env first (won't override existing env vars)
 load_dotenv(dotenv_path="default.env", override=False)
@@ -25,12 +29,14 @@ class Settings:
             or "postgresql+psycopg://localhost/group_project"  # Local default
         )
         
-        # Debug logging for deployment troubleshooting
-        print(f"[CONFIG] API_KEY set: {bool(self.API_KEY)}")
-        print(f"[CONFIG] POSTGRES_URI set: {bool(self.POSTGRES_URI)}")
-        print(f"[CONFIG] POSTGRES_URL set: {bool(self.POSTGRES_URL)}")
-        print(f"[CONFIG] DATABASE_URL set: {bool(self.DATABASE_URL)}")
-        print(f"[CONFIG] Using database_url: {self.database_url[:30]}..." if len(self.database_url) > 30 else f"[CONFIG] Using database_url: {self.database_url}")
+        # Debug logging for deployment troubleshooting (using logger instead of print)
+        logger.debug(f"API_KEY set: {bool(self.API_KEY)}")
+        logger.debug(f"POSTGRES_URI set: {bool(self.POSTGRES_URI)}")
+        logger.debug(f"POSTGRES_URL set: {bool(self.POSTGRES_URL)}")
+        logger.debug(f"DATABASE_URL set: {bool(self.DATABASE_URL)}")
+        # Log only a sanitized version of the database URL (no credentials)
+        db_url_display = self.database_url.split('@')[-1] if '@' in self.database_url else self.database_url[:30]
+        logger.debug(f"Using database at: {db_url_display}")
 
 
 @lru_cache()

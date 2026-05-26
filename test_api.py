@@ -102,8 +102,8 @@ def test_db():
 
 @pytest.fixture()
 def client(test_db):
-    """Get test client"""
-    with TestClient(app) as test_client:
+    """Get test client with API key header"""
+    with TestClient(app, headers={"X-API-Key": "test-api-key"}) as test_client:
         yield test_client
 
 

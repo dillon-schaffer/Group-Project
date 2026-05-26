@@ -47,6 +47,91 @@ def create_user(user: schemas.UserCreate):
 
         return schemas.UserCreated(user_id=user_id)
 
+@router.get("/{user_id}", response_model=schemas.UserProfile)
+def get_user(user_id: int):
+    """Get a user's profile information."""
+    with db.engine.begin() as connection:
+        user = connection.execute(
+            sqlalchemy.text(
+                \"\"\"
+                SELECT user_id, name, email, created_at
+                FROM users
+                WHERE user_id = :user_id
+                \"\"\"
+            ),
+            {\"user_id\": user_id}
+        ).fetchone()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f\"User {user_id} not found\",
+            )
+
+        return schemas.UserProfile(
+            user_id=user.user_id,
+            name=user.name,
+            email=user.email,
+            created_at=user.created_at
+        )
+
+
+@router.get(\"/{user_id}/events\", response_model=list[schemas.UserEventOut])
+def get_user_events(user_id: int):
+    \"\"\"Get all events a user has RSVP'd to.\"\"\"
+    with db.engine.begin() as connection:
+        # Check if user exists
+        user = connection.execute(
+            sqlalchemy.text(\"SELECT user_id FROM users WHERE user_id = :user_id\"),
+            {\"user_id\": user_id}
+        ).fetchone()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f\"User {user_id} not found\",
+            )
+
+        # Get all events user has RSVP'd to
+        events = connection.execute(
+            sqlalchemy.text(
+                \"\"\"
+                SELECT 
+                    e.event_id,
+                    e.group_id,
+                    g.name as group_name,
+                    e.title,
+                    e.location,
+                    e.start_time,
+                    e.end_time,
+                    e.capacity,
+                    e.status,
+                    r.status as rsvp_status
+                FROM events e
+                JOIN groups g ON e.group_id = g.group_id
+                JOIN rsvps r ON e.event_id = r.event_id
+                WHERE r.user_id = :user_id
+                ORDER BY e.start_time DESC
+                \"\"\"
+            ),
+            {\"user_id\": user_id}
+        ).fetchall()
+
+        return [
+            schemas.UserEventOut(
+                event_id=row.event_id,
+                group_id=row.group_id,
+                group_name=row.group_name,
+                title=row.title,
+                location=row.location,
+                start_time=row.start_time,
+                end_time=row.end_time,
+                capacity=row.capacity,
+                status=row.status,
+                rsvp_status=row.rsvp_status
+            )
+            for row in events
+        ]
 
 @router.get("/{user_id}/dashboard", response_model=schemas.UserDashboard)
 def get_user_dashboard(user_id: int):
