@@ -5,7 +5,9 @@ __pycache__/
 .env
 .venv/
 venv/
+.DS_Store
 
 # Test databases
 *.db
 test.db
+

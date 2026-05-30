@@ -8,3 +8,5 @@ email-validator
 bcrypt
 pytest
 httpx
+faker
+numpy
