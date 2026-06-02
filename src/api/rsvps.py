@@ -47,34 +47,32 @@ def create_or_update_rsvp(event_id: int, rsvp: schemas.RsvpCreate):
                 detail="Only group members can RSVP to events",
             )
 
-        # Check capacity if user is RSVPing as "going"
-        if rsvp.status == "going":
-            # Count current "going" RSVPs (excluding this user if they already have an RSVP)
+        existing_rsvp = connection.execute(
+            sqlalchemy.text(
+                "SELECT event_id, status FROM rsvps WHERE event_id = :event_id AND user_id = :user_id"
+            ),
+            {"event_id": event_id, "user_id": rsvp.user_id}
+        ).fetchone()
+
+        # Only block transitions that would add one more attendee.
+        if rsvp.status == "going" and (not existing_rsvp or existing_rsvp.status != "going"):
             going_count = connection.execute(
                 sqlalchemy.text(
                     """
-                    SELECT COUNT(*) as going_count
+                    SELECT COUNT(*)
                     FROM rsvps
-                    WHERE event_id = :event_id 
+                    WHERE event_id = :event_id
                       AND status = 'going'
-                      AND user_id != :user_id
                     """
                 ),
-                {"event_id": event_id, "user_id": rsvp.user_id}
-            ).fetchone()
-            
-            if going_count and going_count.going_count >= event.capacity:
+                {"event_id": event_id}
+            ).scalar_one()
+
+            if going_count >= event.capacity:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Event is at full capacity ({event.capacity} attendees)",
                 )
-
-        existing_rsvp = connection.execute(
-            sqlalchemy.text(
-                "SELECT event_id FROM rsvps WHERE event_id = :event_id AND user_id = :user_id"
-            ),
-            {"event_id": event_id, "user_id": rsvp.user_id}
-        ).fetchone()
 
         if existing_rsvp:
             connection.execute(
@@ -143,21 +141,24 @@ def get_event_rsvps(event_id: int, requested_by: int, limit: int = 100, offset: 
                 detail="Only group owners and organizers can view the RSVP list",
             )
 
-        # Get total counts for all RSVPs (unpaginated)
-        all_rsvps = connection.execute(
+        # Get aggregate RSVP counts in SQL (unpaginated)
+        counts_row = connection.execute(
             sqlalchemy.text(
                 """
-                SELECT r.status
+                SELECT
+                    COUNT(*) FILTER (WHERE r.status = 'going') AS going_count,
+                    COUNT(*) FILTER (WHERE r.status = 'maybe') AS maybe_count,
+                    COUNT(*) FILTER (WHERE r.status = 'not going') AS not_going_count
                 FROM rsvps r
                 WHERE r.event_id = :event_id
                 """
             ),
             {"event_id": event_id}
-        ).fetchall()
-        
-        going_count = sum(1 for r in all_rsvps if r.status == "going")
-        maybe_count = sum(1 for r in all_rsvps if r.status == "maybe")
-        not_going_count = sum(1 for r in all_rsvps if r.status == "not going")
+        ).fetchone()
+
+        going_count = counts_row.going_count or 0
+        maybe_count = counts_row.maybe_count or 0
+        not_going_count = counts_row.not_going_count or 0
 
         # Get paginated RSVP details
         rsvp_rows = connection.execute(

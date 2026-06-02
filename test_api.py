@@ -462,6 +462,96 @@ def test_update_rsvp(client):
     assert data["status"] == "maybe"
 
 
+def test_create_rsvp_rejects_when_event_is_full(client):
+    """Test that a second going RSVP is rejected when the event is at capacity."""
+    owner = client.post("/users", json={"name": "Owner", "email": "owner-full@example.com", "password": "Passw0rd!"})
+    member = client.post("/users", json={"name": "Member", "email": "member-full@example.com", "password": "Passw0rd!"})
+
+    owner_id = owner.json()["user_id"]
+    member_id = member.json()["user_id"]
+
+    group = client.post("/groups", json={"name": "Capacity Group", "created_by": owner_id})
+    group_id = group.json()["group_id"]
+
+    add_member = client.post(f"/groups/{group_id}/members", json={"user_id": member_id})
+    assert add_member.status_code == 201
+
+    event = client.post(
+        f"/groups/{group_id}/events",
+        json={
+            "created_by": owner_id,
+            "title": "Limited Event",
+            "location": "Room 1",
+            "start_time": "2026-05-10T08:00:00",
+            "end_time": "2026-05-10T12:00:00",
+            "capacity": 1,
+        }
+    )
+    event_id = event.json()["event_id"]
+
+    first_rsvp = client.post(
+        f"/events/{event_id}/rsvp",
+        json={"user_id": owner_id, "status": "going"}
+    )
+    assert first_rsvp.status_code == 200
+
+    response = client.post(
+        f"/events/{event_id}/rsvp",
+        json={"user_id": member_id, "status": "going"}
+    )
+
+    assert response.status_code == 400
+    assert "full capacity" in response.json()["detail"]
+
+
+def test_update_rsvp_to_going_rejects_when_event_is_full(client):
+    """Test that changing an RSVP to going is rejected when the event is already full."""
+    owner = client.post("/users", json={"name": "Owner Two", "email": "owner-update@example.com", "password": "Passw0rd!"})
+    member = client.post("/users", json={"name": "Member Two", "email": "member-update@example.com", "password": "Passw0rd!"})
+
+    owner_id = owner.json()["user_id"]
+    member_id = member.json()["user_id"]
+
+    group = client.post("/groups", json={"name": "Update Capacity Group", "created_by": owner_id})
+    group_id = group.json()["group_id"]
+
+    add_member = client.post(f"/groups/{group_id}/members", json={"user_id": member_id})
+    assert add_member.status_code == 201
+
+    event = client.post(
+        f"/groups/{group_id}/events",
+        json={
+            "created_by": owner_id,
+            "title": "Tight Capacity Event",
+            "location": "Room 2",
+            "start_time": "2026-05-10T08:00:00",
+            "end_time": "2026-05-10T12:00:00",
+            "capacity": 1,
+        }
+    )
+    event_id = event.json()["event_id"]
+
+    owner_rsvp = client.post(
+        f"/events/{event_id}/rsvp",
+        json={"user_id": owner_id, "status": "going"}
+    )
+    assert owner_rsvp.status_code == 200
+
+    member_initial = client.post(
+        f"/events/{event_id}/rsvp",
+        json={"user_id": member_id, "status": "maybe"}
+    )
+    assert member_initial.status_code == 200
+
+    response = client.post(
+        f"/events/{event_id}/rsvp",
+        json={"user_id": member_id, "status": "going"}
+    )
+
+    assert response.status_code == 400
+    assert "full capacity" in response.json()["detail"]
+
+
 def test_event_invalid_time_range(client):
     """Test that event with end_time before start_time fails"""
     user = client.post("/users", json={"name": "User", "email": "user@example.com", "password": "pass"})

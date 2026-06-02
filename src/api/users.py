@@ -53,19 +53,19 @@ def get_user(user_id: int):
     with db.engine.begin() as connection:
         user = connection.execute(
             sqlalchemy.text(
-                \"\"\"
+                """
                 SELECT user_id, name, email, created_at
                 FROM users
                 WHERE user_id = :user_id
-                \"\"\"
+                """
             ),
-            {\"user_id\": user_id}
+            {"user_id": user_id}
         ).fetchone()
 
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f\"User {user_id} not found\",
+                detail=f"User {user_id} not found",
             )
 
         return schemas.UserProfile(
@@ -76,26 +76,26 @@ def get_user(user_id: int):
         )
 
 
-@router.get(\"/{user_id}/events\", response_model=list[schemas.UserEventOut])
+@router.get("/{user_id}/events", response_model=list[schemas.UserEventOut])
 def get_user_events(user_id: int):
-    \"\"\"Get all events a user has RSVP'd to.\"\"\"
+    """Get all events a user has RSVP'd to."""
     with db.engine.begin() as connection:
         # Check if user exists
         user = connection.execute(
-            sqlalchemy.text(\"SELECT user_id FROM users WHERE user_id = :user_id\"),
-            {\"user_id\": user_id}
+            sqlalchemy.text("SELECT user_id FROM users WHERE user_id = :user_id"),
+            {"user_id": user_id}
         ).fetchone()
 
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f\"User {user_id} not found\",
+                detail=f"User {user_id} not found",
             )
 
         # Get all events user has RSVP'd to
         events = connection.execute(
             sqlalchemy.text(
-                \"\"\"
+                """
                 SELECT 
                     e.event_id,
                     e.group_id,
@@ -112,9 +112,9 @@ def get_user_events(user_id: int):
                 JOIN rsvps r ON e.event_id = r.event_id
                 WHERE r.user_id = :user_id
                 ORDER BY e.start_time DESC
-                \"\"\"
+                """
             ),
-            {\"user_id\": user_id}
+            {"user_id": user_id}
         ).fetchall()
 
         return [
