@@ -152,7 +152,11 @@ def update_event(group_id: int, event_id: int, update: schemas.EventUpdate):
         # Check if event exists
         event = connection.execute(
             sqlalchemy.text(
-                "SELECT event_id, title, location, start_time, end_time, capacity, status FROM events WHERE event_id = :event_id AND group_id = :group_id"
+                """
+                SELECT event_id, title, location, start_time, end_time, capacity, status 
+                FROM events 
+                WHERE event_id = :event_id AND group_id = :group_id
+                """
             ),
             {"event_id": event_id, "group_id": group_id}
         ).fetchone()
